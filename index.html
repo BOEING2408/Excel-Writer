@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>带导入导出的 Excel 编辑器</title>
+    <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/luckysheet/dist/plugins/css/pluginsCss.css' />
+    <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/luckysheet/dist/plugins/plugins.css' />
+    <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/luckysheet/dist/css/luckysheet.css' />
+    <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/luckysheet/dist/assets/iconfont/iconfont.css' />
+    
+    <script src="https://cdn.jsdelivr.net/npm/luckysheet/dist/plugins/js/plugin.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luckysheet/dist/luckysheet.umd.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/luckyexcel/dist/luckyexcel.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/file-saver/dist/FileSaver.min.js"></script>
+
+    <style>
+        #toolbar {
+            position: absolute;
+            top: 10px;
+            left: 100px;
+            z-index: 1000;
+            background: white;
+            padding: 5px 15px;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        .btn {
+            margin-right: 10px;
+            cursor: pointer;
+            padding: 5px 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="toolbar">
+        <input type="file" id="uploadFile" style="display: none;" accept=".xlsx" />
+        <button class="btn" onclick="document.getElementById('uploadFile').click()">导入 Excel</button>
+        <button class="btn" onclick="exportExcel()">导出 Excel</button>
+    </div>
+
+    <div id="luckysheet" style="margin:0px;padding:0px;position:absolute;width:100%;height:100%;left: 0px;top: 0px;"></div>
+
+    <script>
+        $(function () {
+            // 初始化编辑器
+            var options = {
+                container: 'luckysheet',
+                lang: 'zh',
+                title: '我的在线编辑器',
+                allowUpdate: true,
+                data: [{ "name": "Sheet1", "status": "1", "order": "0", "data": [], "config": {} }]
+            };
+            luckysheet.create(options);
+
+            // 监听导入按钮
+            document.getElementById('uploadFile').addEventListener('change', function(evt) {
+                var files = evt.target.files;
+                if (files == null || files.length == 0) return;
+                
+                var file = files[0];
+                // 使用 Luckyexcel 转换文件
+                LuckyExcel.transformExcelToLucky(file, function(exportJson, luckysheetfile) {
+                    if (exportJson.sheets == null || exportJson.sheets.length == 0) {
+                        alert("读取失败，请检查文件格式");
+                        return;
+                    }
+                    // 销毁旧表格并载入新数据
+                    luckysheet.destroy();
+                    luckysheet.create({
+                        container: 'luckysheet',
+                        lang: 'zh',
+                        data: exportJson.sheets,
+                        title: exportJson.info.name
+                    });
+                });
+            });
+        });
+
+        // 导出功能逻辑
+        async function exportExcel() {
+            const sheets = luckysheet.getAllSheets();
+            const workbook = new ExcelJS.Workbook();
+
+            sheets.forEach(sheet => {
+                const worksheet = workbook.addWorksheet(sheet.name);
+                
+                // 处理合并单元格
+                if(sheet.config && sheet.config.merge) {
+                    Object.values(sheet.config.merge).forEach(m => {
+                        worksheet.mergeCells(m.r + 1, m.c + 1, m.r + m.rs, m.c + m.cs);
+                    });
+                }
+
+                // 填充数据与基础样式
+                sheet.data.forEach((row, r) => {
+                    row.forEach((cell, c) => {
+                        if (cell && cell.v !== null) {
+                            const targetCell = worksheet.getCell(r + 1, c + 1);
+                            targetCell.value = cell.v;
+                            
+                            // 导出背景色简单实现
+                            if(cell.bg) {
+                                targetCell.fill = {
+                                    type: 'pattern',
+                                    pattern: 'solid',
+                                    fgColor: { argb: cell.bg.replace('#', '') }
+                                };
+                            }
+                        }
+                    });
+                });
+            });
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            saveAs(new Blob([buffer]), "Export_" + new Date().getTime() + ".xlsx");
+        }
+    </script>
+</body>
+</html>
